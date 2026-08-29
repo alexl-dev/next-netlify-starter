@@ -31,3 +31,6 @@ yarn-error.log*
 
 # Local Netlify folder
 .netlify
+
+# Transient git worktrees used by background agents
+/.claude/worktrees/
