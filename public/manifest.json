@@ -1,0 +1,10 @@
+{
+  "name": "Riffle — fishing log",
+  "short_name": "Riffle",
+  "description": "A fishing log that records the weather, moon and river conditions for you.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#eef1f0",
+  "theme_color": "#14201e"
+}

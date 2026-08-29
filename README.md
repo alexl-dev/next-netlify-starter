@@ -1,63 +1,91 @@
-# Next + Netlify Starter
+# Riffle
 
-[![Netlify Status](https://api.netlify.com/api/v1/badges/46648482-644c-4c80-bafb-872057e51b6b/deploy-status)](https://app.netlify.com/sites/next-dev-starter/deploys)
+A fishing log that records the conditions for you.
 
-This is a [Next.js](https://nextjs.org/) v14 project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app) and set up to be instantly deployed to [Netlify](https://url.netlify.com/SyTBPVamO)!
+Take a photo, drop a pin, write a note — Riffle attaches the weather, the
+barometric trend, the moon and solunar periods, and the river gauge readings
+that stood over that exact spot at that exact minute. Later it tells you what
+your own log actually says about them, without pretending twelve trips are a
+finding.
 
-This project is a very minimal starter that includes 2 sample components, a global stylesheet, a `netlify.toml` for deployment, and a `jsconfig.json` for setting up absolute imports and aliases. With Netlify, you'll have access to features like Preview Mode, server-side rendering/incremental static regeneration via Netlify Functions, and internationalized routing on deploy automatically.
+This is the **web prototype**. It runs in a phone browser today; the parts worth
+keeping (`lib/`) are plain JavaScript with no framework imports, so they move to
+a native build unchanged.
 
-[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/netlify-templates/next-netlify-starter&utm_source=github&utm_medium=nextstarter-cs&utm_campaign=devex-cs)
-
-(If you click this button, it will create a new repo for you that looks exactly like this one, and sets that repo up immediately for deployment on Netlify)
-
-## Table of Contents:
-
-- [Getting Started](#getting-started)
-- [Installation options](#installation-options)
-- [Testing](#testing)
-  - [Included Default Testing](#included-default-testing)
-  - [Removing Renovate](#removing-renovate)
-
-## Getting Started
-
-First, run the development server:
+## Running it
 
 ```bash
-npm run dev
-# or
-yarn dev
+npm install
+npm run dev      # http://localhost:3000
+npm test         # 20 tests, no network required
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Testing it on a phone
 
-You can start editing the page by modifying `pages/index.js`. The page auto-updates as you edit the file.
+Geolocation and the camera need **HTTPS** in mobile Safari — hitting a laptop's
+LAN address over plain `http://` silently fails, which looks like a broken app.
+So use a deployed URL rather than a local one:
 
-### Installation options
+1. Push this branch and let Netlify build it (this repo is already wired to
+   Netlify), or run `npx netlify deploy --build` for a one-off preview URL.
+2. Open the URL in Safari on the phone.
+3. **Share › Add to Home Screen.** It then opens without browser chrome, which
+   is as close as a web build gets to the real thing.
+4. Add a water, bind its gauge, start a trip, drop a pin, log a fish.
 
-**Option one:** One-click deploy
+Allow location when asked. Photos come from the normal camera sheet.
 
-[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/netlify-templates/next-netlify-starter&utm_source=github&utm_medium=nextstarter-cs&utm_campaign=devex-cs)
+## How it fits together
 
-**Option two:** Manual clone
+```
+lib/astro.js            sun, moon, solunar — pure arithmetic, no network, no key
+lib/sources/openMeteo.js  weather + barometric trend + historical back-fill
+lib/sources/usgs.js       gauge height, discharge, water temp, flow percentile
+lib/sources/noaa.js       tide stage and Great Lakes water level
+lib/conditions.js       assembles one snapshot; partial beats nothing
+lib/model.js            entities, buckets, catch-rate maths, "days like today"
+lib/store.js            IndexedDB — the source of truth, plus the enrich queue
+lib/app.js              the verbs the screens call
+pages/api/*             thin proxies, only because browsers cannot call USGS/NOAA directly
+```
 
-1. Clone this repo: `git clone https://github.com/netlify-templates/next-netlify-starter.git`
-2. Navigate to the directory and run `npm install`
-3. Run `npm run dev`
-4. Make your changes
-5. Connect to [Netlify](https://url.netlify.com/Bk4UicocL) manually (the `netlify.toml` file is the one you'll need to make sure stays intact to make sure the export is done and pointed to the right stuff)
+### Three decisions worth knowing
 
-## Testing
+**Capture never waits on the network.** A pin is a place and a time written to
+IndexedDB; conditions are fetched afterwards, possibly days later from the
+couch. Rivers do not have signal, and an app that needs it at the water is an
+app that loses the day. This is why Open-Meteo was chosen over OpenWeather —
+its historical archive means a back-fill four days later returns exactly the
+weather that stood over you.
 
-### Included Default Testing
+**Photo GPS is captured from the device, never read from the photo.** iOS and
+mobile browsers both strip location from in-app camera captures. Trusting EXIF
+here would quietly lose "where was I?" for an entire season.
 
-We’ve included some tooling that helps us maintain these templates. This template currently uses:
+**Every rate is per hour fished, blanks included.** Counting catches mostly
+rediscovers your own calendar — you fish weekends and evenings before fronts,
+so of course most fish were caught then. The trip clock is what turns the log
+into something that can answer a question. Ending a trip matters as much as
+starting one.
 
-- [Renovate](https://www.mend.io/free-developer-tools/renovate/) - to regularly update our dependencies
-- [Cypress](https://www.cypress.io/) - to run tests against how the template runs in the browser
-- [Cypress Netlify Build Plugin](https://github.com/cypress-io/netlify-plugin-cypress) - to run our tests during our build process
+### What the numbers will and will not tell you
 
-If your team is not interested in this tooling, you can remove them with ease!
+The Trends screen prints the sample size beside every bar and says plainly when
+there is not enough to compare. At twenty to forty trips a year, single-variable
+bars are the most any personal log can honestly support — which is why
+**Days like today** exists: it makes no causal claim, it just finds the past
+trips whose water and sky resembled now, and shows what happened. That is
+useful at a dozen trips, long before a chart is.
 
-### Removing Renovate
+## Not built yet
 
-In order to keep our project up-to-date with dependencies we use a tool called [Renovate](https://github.com/marketplace/renovate). If you’re not interested in this tooling, delete the `renovate.json` file and commit that onto your main branch.
+- **Shared logs.** `lib/store.js` is the seam: it is the only module that
+  touches storage, so a backend goes there. Needs a Supabase project and keys.
+- **Offline map tiles.** Packaging tiles is a project of its own; the cheap
+  version is pre-caching the trip area before leaving the driveway.
+- **Native build.** `lib/` ports as-is; the screens and the Leaflet map do not.
+
+Weather data by [Open-Meteo](https://open-meteo.com/) (CC BY 4.0). River data
+from [USGS Water Services](https://waterservices.usgs.gov/). Tides and lake
+levels from [NOAA CO-OPS](https://api.tidesandcurrents.noaa.gov/). Maps
+&copy; OpenStreetMap contributors.
