@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import Chrome from '@components/Chrome';
 import Conditions from '@components/Conditions';
+import LocationPicker, { useLocationFallback } from '@components/LocationPicker';
 import * as store from '@lib/store';
 import * as app from '@lib/app';
 import { tripHours } from '@lib/model';
@@ -21,6 +22,7 @@ export default function Today() {
   const [queued, setQueued] = useState(0);
   const [waterId, setWaterId] = useState('');
   const [tick, setTick] = useState(0);
+  const { resolvePosition, pickerProps } = useLocationFallback();
 
   const refresh = useCallback(async () => {
     const [w, t, c, pendingJobs] = await Promise.all([
@@ -57,9 +59,15 @@ export default function Today() {
   const locate = useCallback(async () => {
     setStatus('Locating…');
     try {
-      const pos = await app.currentPosition();
-      setPosition(pos);
       const water = waters.find((w) => w.id === (current ? current.waterId : waterId));
+      // Conditions are read for a point, and any point the angler recognises
+      // beats no reading at all — so a refused fix opens the picker.
+      const pos = await resolvePosition({ water });
+      if (!pos) {
+        setStatus('Conditions need a spot. Pick one whenever you like.');
+        return;
+      }
+      setPosition(pos);
       setStatus('Reading conditions…');
       const snap = await app.conditionsHere({
         lat: pos.lat,
@@ -71,7 +79,7 @@ export default function Today() {
     } catch (err) {
       setStatus(err.message);
     }
-  }, [waters, current, waterId]);
+  }, [waters, current, waterId, resolvePosition]);
 
   async function handleStart() {
     const water = waters.find((w) => w.id === waterId);
@@ -156,9 +164,12 @@ export default function Today() {
           <p className="tiny muted" style={{ marginTop: 8 }}>
             {position.lat.toFixed(4)}, {position.lon.toFixed(4)}
             {position.accuracyM ? ` · ±${position.accuracyM} m` : ''}
+            {position.source && position.source !== 'gps' ? ' · a spot you picked' : ''}
           </p>
         ) : null}
       </div>
+
+      {pickerProps ? <LocationPicker {...pickerProps} /> : null}
 
       {queued > 0 ? (
         <div className="banner">

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import Chrome from '@components/Chrome';
+import LocationPicker, { useLocationFallback } from '@components/LocationPicker';
 import * as store from '@lib/store';
 import * as app from '@lib/app';
 import { WATER_KINDS } from '@lib/model';
@@ -17,6 +18,7 @@ export default function Waters() {
   const [candidates, setCandidates] = useState({});
   const [busyId, setBusyId] = useState(null);
   const [status, setStatus] = useState('');
+  const { resolvePosition, pickerProps } = useLocationFallback();
 
   const refresh = useCallback(async () => {
     setWaters(await store.all('waters'));
@@ -43,7 +45,14 @@ export default function Waters() {
     setBusyId(water.id);
     setStatus('Finding your position…');
     try {
-      const pos = await app.currentPosition();
+      // The search is a bounding box around a point — and any point on the
+      // right stretch of river will do, so a refused fix opens the picker
+      // rather than leaving the water permanently ungauged.
+      const pos = await resolvePosition({ water });
+      if (!pos) {
+        setStatus('No spot chosen, so there was nowhere to search from.');
+        return;
+      }
       setStatus('Searching for gauges nearby…');
       const stations = await app.findStations({ lat: pos.lat, lon: pos.lon, kind: water.kind });
       setCandidates((prev) => ({ ...prev, [water.id]: stations }));
@@ -107,6 +116,8 @@ export default function Waters() {
       </form>
 
       {status ? <p className="small muted">{status}</p> : null}
+
+      {pickerProps ? <LocationPicker {...pickerProps} /> : null}
 
       {waters.map((water) => (
         <div className="card" key={water.id}>

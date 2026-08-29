@@ -1,43 +1,14 @@
 import { useEffect, useRef } from 'react';
+import { loadLeaflet, TILES } from '@components/leaflet';
 
 /**
- * Leaflet map with one marker per pin, loaded from a CDN at runtime rather
- * than bundled — the map is the one piece of this prototype that does not
- * survive into the native build (which uses MapKit), so it earns no place in
- * the dependency tree.
+ * Leaflet map with one marker per pin. The loader lives in `leaflet.js`
+ * because the manual location picker needs the same script.
  *
  * Markers are draggable on purpose. GPS under a tree canopy or in a steep
  * valley is routinely off by a good cast, and the person standing there knows
  * better than the phone does.
  */
-
-const LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-const LEAFLET_JS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-
-function loadLeaflet() {
-  if (window.L) return Promise.resolve(window.L);
-
-  if (!document.querySelector(`link[href="${LEAFLET_CSS}"]`)) {
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = LEAFLET_CSS;
-    document.head.appendChild(link);
-  }
-
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector(`script[src="${LEAFLET_JS}"]`);
-    if (existing) {
-      existing.addEventListener('load', () => resolve(window.L));
-      existing.addEventListener('error', reject);
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = LEAFLET_JS;
-    script.onload = () => resolve(window.L);
-    script.onerror = () => reject(new Error('Leaflet failed to load'));
-    document.head.appendChild(script);
-  });
-}
 
 export default function PinMap({ pins = [], center, onMovePin, height = 300 }) {
   const nodeRef = useRef(null);
@@ -52,10 +23,7 @@ export default function PinMap({ pins = [], center, onMovePin, height = 300 }) {
         if (cancelled || !nodeRef.current || mapRef.current) return;
         const start = center || (pins[0] ? [pins[0].lat, pins[0].lon] : [44.5, -89.5]);
         const map = L.map(nodeRef.current, { attributionControl: true }).setView(start, 14);
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19,
-          attribution: '&copy; OpenStreetMap',
-        }).addTo(map);
+        L.tileLayer(TILES.url, TILES.options).addTo(map);
         mapRef.current = map;
         syncMarkers(L, map);
       })

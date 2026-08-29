@@ -4,6 +4,7 @@ import Link from 'next/link';
 import Chrome from '@components/Chrome';
 import Conditions from '@components/Conditions';
 import PinMap from '@components/PinMap';
+import LocationPicker, { useLocationFallback } from '@components/LocationPicker';
 import * as store from '@lib/store';
 import * as app from '@lib/app';
 import { pinDurations, tripHours } from '@lib/model';
@@ -31,6 +32,7 @@ export default function TripScreen() {
   const [photoPreview, setPhotoPreview] = useState(null);
   const [activePin, setActivePin] = useState('');
   const fileRef = useRef(null);
+  const { resolvePosition, pickerProps } = useLocationFallback();
 
   const refresh = useCallback(async () => {
     if (!id) return;
@@ -62,9 +64,20 @@ export default function TripScreen() {
     setBusy(true);
     setStatus('Getting a fix…');
     try {
-      const pin = await app.dropPin({ tripId: id, name: '' });
+      // If the phone will not say where we are, the picker takes over rather
+      // than the spot being lost. Only a deliberate "not now" drops nothing.
+      const position = await resolvePosition();
+      if (!position) {
+        setStatus('No spot chosen, so no pin was dropped.');
+        return;
+      }
+      const pin = await app.dropPin({ tripId: id, name: '', position });
       setActivePin(pin.id);
-      setStatus('Pin dropped. Conditions will attach in the background.');
+      setStatus(
+        position.source === 'gps'
+          ? 'Pin dropped. Conditions will attach in the background.'
+          : 'Pin dropped where you placed it. Conditions will attach in the background.'
+      );
       await refresh();
       app.runEnrichment().then(refresh).catch(() => {});
     } catch (err) {
@@ -90,12 +103,19 @@ export default function TripScreen() {
   async function handleLogCatch(event) {
     event.preventDefault();
     setBusy(true);
-    setStatus('Saving…');
+    setStatus('Finding where you are…');
     try {
+      // A fish logged with location off used to be saved with null coordinates
+      // and never enriched — permanently condition-less. Asking here means a
+      // hand-picked spot still earns the fish its weather and river reading.
+      const position = await resolvePosition({ timeout: 8000 });
+      setStatus('Saving…');
       await app.logCatch({
         tripId: id,
         pinId: activePin || null,
         photoBlob,
+        position,
+        askDevice: false,
         fields: {
           species: form.species.trim(),
           lengthIn: form.lengthIn === '' ? null : Number(form.lengthIn),
@@ -161,6 +181,8 @@ export default function TripScreen() {
         {status ? <p className="small muted" style={{ marginTop: 10 }}>{status}</p> : null}
       </div>
 
+      {pickerProps ? <LocationPicker {...pickerProps} /> : null}
+
       {pins.length ? (
         <div className="card">
           <h2>Where you fished</h2>
@@ -177,6 +199,7 @@ export default function TripScreen() {
                     {time(pin.droppedAt)} · {pin.minutes} min here ·{' '}
                     {catches.filter((c) => c.pinId === pin.id).length} fish
                     {pin.snapshotStatus !== 'enriched' ? ' · conditions pending' : ''}
+                    {pin.source && pin.source !== 'gps' ? ' · placed by hand' : ''}
                   </span>
                   {pin.snapshot ? (
                     <div style={{ marginTop: 8 }}>
@@ -285,7 +308,8 @@ export default function TripScreen() {
             </button>
             <p className="tiny muted">
               Location is read from the phone as you save — a photo's own GPS tag is stripped by the
-              browser, so it cannot be trusted to remember the spot.
+              browser, so it cannot be trusted to remember the spot. If the phone cannot say, you
+              will be asked to pick the spot instead, and the fish still gets its conditions.
             </p>
           </div>
         </form>
