@@ -155,6 +155,13 @@ function PlaceOnMap({ center, placed, onPlace, height = 320 }) {
 
     return () => {
       cancelled = true;
+      // Unlike the trip map, this one comes and goes with every refused fix.
+      // Leaving Leaflet attached to a detached node leaks a listener each time.
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+        markerRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -214,12 +221,32 @@ export function useLocationFallback() {
     if (resolve) resolve(position);
   }, []);
 
+  // Navigating away mid-question answers it, so the caller awaiting a spot is
+  // released instead of hanging on a promise nobody can resolve any more.
+  useEffect(
+    () => () => {
+      const resolve = settleRef.current;
+      settleRef.current = null;
+      if (resolve) resolve(null);
+    },
+    []
+  );
+
   const ask = useCallback(async (failure, water) => {
     // Reading the log for options is IndexedDB, not the network — the picker
-    // has to work in exactly the dead zone that broke the fix in the first place.
-    const [pins, waters, trips] = await Promise.all([
-      store.all('pins'), store.all('waters'), store.all('trips'),
-    ]);
+    // has to work in exactly the dead zone that broke the fix in the first
+    // place. If even that fails, the map alone is still an answer, so this
+    // never rethrows: the one thing the picker must not do is dead-end too.
+    let pins = [];
+    let waters = [];
+    let trips = [];
+    try {
+      [pins, waters, trips] = await Promise.all([
+        store.all('pins'), store.all('waters'), store.all('trips'),
+      ]);
+    } catch {
+      /* No stored spots to offer. The map still works. */
+    }
     const options = app.positionOptions({ pins, waters, trips });
     const center = app.initialCenter({
       lastPosition: app.lastKnownPosition(),
@@ -227,6 +254,9 @@ export function useLocationFallback() {
       recentPins: pins,
     });
     return new Promise((resolve) => {
+      // A second ask while one is open answers the first with nothing, rather
+      // than stranding a caller on a promise that will never settle.
+      if (settleRef.current) settleRef.current(null);
       settleRef.current = resolve;
       setRequest({ ...failure, options, center });
     });
