@@ -18,7 +18,7 @@ contract below, which constrains how `lib/` may be written.
 ```bash
 npm run dev      # localhost:3000
 npm run build    # next build
-npm test         # the whole suite
+npm test         # the whole suite — two files, named explicitly
 
 # one test — the flag MUST precede the path or it is silently ignored
 # and the full suite runs while reporting success
@@ -54,9 +54,15 @@ lib/sources/noaa.js       tide stage, Great Lakes water level
 lib/conditions.js       assembles one snapshot from the above
 lib/model.js            entities, condition buckets, catch-rate maths
 lib/store.js            IndexedDB + the enrichment queue
-lib/app.js              the verbs the screens call
+lib/app.js              the verbs the screens call, plus location resolution
+components/leaflet.js   shared CDN loader for Leaflet and OSM tiles
+components/LocationPicker.js  what happens when the device will not give a fix
 pages/api/*             thin proxies; exist only because browsers cannot call USGS/NOAA
+docs/security.md        threat model and the findings behind the shared-log posture
 ```
+
+Every component that draws a map imports `components/leaflet.js`. Don't
+re-implement the script-injection dance — one copy of it is the right number.
 
 ### Capture never awaits the network
 
@@ -88,9 +94,36 @@ from data that isn't there.
 ### Location comes from the device, never from the photo
 
 iOS and mobile browsers both strip GPS from EXIF on in-app camera captures.
-`logCatch` reads coordinates from geolocation at save time and writes them onto
-the record. Never reintroduce EXIF as a position source; it fails silently and
-loses a whole season of "where was I?".
+`logCatch` reads coordinates at save time and writes them onto the record.
+Never reintroduce EXIF as a position source; it fails silently and loses a
+whole season of "where was I?".
+
+### A refused fix must never dead-end
+
+Permission denied, no fix under a bluff, location switched off at the OS — all
+of it used to end the interaction: no pin, no gauge search, and a fish saved
+with null coordinates that could never be enriched afterwards.
+
+So capture paths do **not** call `currentPosition` directly. They call
+`resolvePosition` from `useLocationFallback` (`components/LocationPicker.js`),
+which offers the three things a person can actually answer with: try the phone
+again, reuse a spot already in the log, or point at the map. It resolves a
+position or `null` — and `null` means the person declined, which is the only
+case where nothing should be written.
+
+Two invariants hold this together:
+
+- **The picker itself must not dead-end.** It reads its options from IndexedDB,
+  never the network, because it runs in exactly the dead zone that broke the fix
+  — and if even that read fails it still offers the map. Unmounting mid-question
+  resolves the promise rather than leaving the caller hanging forever.
+- **Provenance is recorded, never inferred.** `source` on a pin or catch is
+  `gps` when the device measured it, `map` when a person placed it, and
+  `recent`/`water` when it was reused from the log (`POSITION_SOURCES` in
+  `lib/app.js`). Records from before this existed carry `null`, meaning nobody
+  knows. A spot pointed at is not a spot measured; keep anything that later
+  asks these records a harder question — an accuracy filter, a map, a
+  distance calculation — able to tell the difference.
 
 ### Every rate is per hour fished
 
@@ -131,6 +164,10 @@ water. Don't replace this with an auto-pick.
 - Node 20 (`.nvmrc`). Netlify builds via `@netlify/plugin-nextjs`.
 - Mobile Safari requires HTTPS for geolocation and camera, so phone testing must
   use a deployed URL — a LAN address over plain HTTP fails silently.
+- Records are currently ownerless and local. `docs/security.md` holds the threat
+  model, and the migration path to account-scoped rows that a shared log needs.
+  Read it before adding sync, accounts, or anything that puts a spot on a wire —
+  fishing spots are the sensitive data here.
 
 ## Legacy from the Next.js starter template
 
