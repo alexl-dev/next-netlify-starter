@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import Chrome from '@components/Chrome';
-import LocationPicker, { useLocationFallback } from '@components/LocationPicker';
+import StationFinder from '@components/StationFinder';
 import * as store from '@lib/store';
 import * as app from '@lib/app';
 import { WATER_KINDS } from '@lib/model';
@@ -15,10 +15,8 @@ export default function Waters() {
   const [waters, setWaters] = useState([]);
   const [name, setName] = useState('');
   const [kind, setKind] = useState('river');
-  const [candidates, setCandidates] = useState({});
-  const [busyId, setBusyId] = useState(null);
+  const [finding, setFinding] = useState(null);
   const [status, setStatus] = useState('');
-  const { resolvePosition, pickerProps } = useLocationFallback();
 
   const refresh = useCallback(async () => {
     setWaters(await store.all('waters'));
@@ -31,41 +29,13 @@ export default function Waters() {
   async function handleAdd(event) {
     event.preventDefault();
     if (!name.trim()) return;
-    await app.addWater({ name: name.trim(), kind });
+    const water = await app.addWater({ name: name.trim(), kind });
     setName('');
     await refresh();
-  }
-
-  /**
-   * Station search runs from wherever you are standing, which is why this is a
-   * first-run flow rather than a preloaded list — it has to work on a river you
-   * have never fished before, three states from home.
-   */
-  async function handleFindStations(water) {
-    setBusyId(water.id);
-    setStatus('Finding your position…');
-    try {
-      // The search is a bounding box around a point — and any point on the
-      // right stretch of river will do, so a refused fix opens the picker
-      // rather than leaving the water permanently ungauged.
-      const pos = await resolvePosition({ water });
-      if (!pos) {
-        setStatus('No spot chosen, so there was nowhere to search from.');
-        return;
-      }
-      setStatus('Searching for gauges nearby…');
-      const stations = await app.findStations({ lat: pos.lat, lon: pos.lon, kind: water.kind });
-      setCandidates((prev) => ({ ...prev, [water.id]: stations }));
-      setStatus(
-        stations.length
-          ? 'Pick the one that is actually on your water — the closest is not always the right one.'
-          : 'No gauges within range. Small creeks often have none; the rest of the log still works.'
-      );
-    } catch (err) {
-      setStatus(err.message);
-    } finally {
-      setBusyId(null);
-    }
+    // Straight into the finder: a water without a gauge is the thing this
+    // screen exists to fix, and making someone hunt for a second button to
+    // finish the job they just started is how waters end up unbound.
+    setFinding(water);
   }
 
   async function handleBind(waterId, station) {
@@ -74,10 +44,12 @@ export default function Waters() {
       id: station.id,
       name: station.name,
       kind: station.kind,
-      distanceKm: station.distanceKm,
+      distanceKm: station.distanceKm == null ? null : station.distanceKm,
     });
-    setCandidates((prev) => ({ ...prev, [waterId]: null }));
-    setStatus('Bound. Every trip on this water will carry that station from now on.');
+    setFinding(null);
+    setStatus(
+      `Bound to ${station.name || station.id}. Every trip on this water carries it from now on.`
+    );
     await refresh();
   }
 
@@ -117,8 +89,6 @@ export default function Waters() {
 
       {status ? <p className="small muted">{status}</p> : null}
 
-      {pickerProps ? <LocationPicker {...pickerProps} /> : null}
-
       {waters.map((water) => (
         <div className="card" key={water.id}>
           <h2 style={{ marginBottom: 4 }}>{water.name}</h2>
@@ -140,32 +110,21 @@ export default function Waters() {
           )}
 
           <div className="row" style={{ marginTop: 12 }}>
-            <button onClick={() => handleFindStations(water)} disabled={busyId === water.id}>
-              {water.station ? 'Change station' : 'Find a station near me'}
+            <button
+              onClick={() => setFinding(finding && finding.id === water.id ? null : water)}
+            >
+              {water.station ? 'Change station' : 'Find a gauge'}
             </button>
           </div>
 
-          {candidates[water.id] && candidates[water.id].length ? (
-            <div className="list" style={{ marginTop: 12 }}>
-              {candidates[water.id].map((station) => (
-                <button
-                  className="item"
-                  key={station.id}
-                  onClick={() => handleBind(water.id, station)}
-                  style={{ textAlign: 'left', minHeight: 0 }}
-                >
-                  <div className="grow">
-                    <b>{station.name}</b>
-                    <span className="sub">
-                      {station.distanceKm} km away · {station.provider === 'usgs' ? 'USGS' : 'NOAA'}{' '}
-                      {station.id}
-                      {station.drainageAreaSqMi
-                        ? ` · drains ${Math.round(station.drainageAreaSqMi)} sq mi`
-                        : ''}
-                    </span>
-                  </div>
-                </button>
-              ))}
+          {finding && finding.id === water.id ? (
+            <div style={{ marginTop: 14 }}>
+              <StationFinder
+                water={water}
+                waters={waters}
+                onBind={(station) => handleBind(water.id, station)}
+                onCancel={() => setFinding(null)}
+              />
             </div>
           ) : null}
         </div>

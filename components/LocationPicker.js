@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { loadLeaflet, TILES } from '@components/leaflet';
+import PlaceOnMap from '@components/PlaceOnMap';
 import * as store from '@lib/store';
 import * as app from '@lib/app';
 
@@ -113,90 +113,6 @@ export default function LocationPicker({
         placed, not measured — so it never gets read later as a GPS fix.
       </p>
     </div>
-  );
-}
-
-/**
- * Tap-to-place map. Deliberately tall and marker-only: this gets used
- * one-handed, in sun, often with a rod under an arm, and the only gesture that
- * has to work is a single tap somewhere near where you are standing.
- */
-function PlaceOnMap({ center, placed, onPlace, height = 320 }) {
-  const nodeRef = useRef(null);
-  const mapRef = useRef(null);
-  const markerRef = useRef(null);
-  const [failed, setFailed] = useState(false);
-
-  const place = useCallback(
-    (lat, lon) => onPlace({ lat, lon }),
-    [onPlace]
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    const start = center || app.DEFAULT_CENTER;
-
-    loadLeaflet()
-      .then((L) => {
-        if (cancelled || !nodeRef.current || mapRef.current) return;
-        const map = L.map(nodeRef.current, { attributionControl: true }).setView(
-          [start.lat, start.lon],
-          // A fix we already had is worth zooming into; a country-scale
-          // fallback is not, and lands you somewhere you cannot recognise.
-          start.from === 'fallback' ? 7 : 14
-        );
-        L.tileLayer(TILES.url, TILES.options).addTo(map);
-        map.on('click', (event) => place(event.latlng.lat, event.latlng.lng));
-        mapRef.current = map;
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
-
-    return () => {
-      cancelled = true;
-      // Unlike the trip map, this one comes and goes with every refused fix.
-      // Leaving Leaflet attached to a detached node leaks a listener each time.
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-        markerRef.current = null;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !placed || !window.L) return;
-    if (!markerRef.current) {
-      markerRef.current = window.L.marker([placed.lat, placed.lon], { draggable: true }).addTo(map);
-      markerRef.current.on('dragend', () => {
-        const { lat, lng } = markerRef.current.getLatLng();
-        place(lat, lng);
-      });
-    } else {
-      markerRef.current.setLatLng([placed.lat, placed.lon]);
-    }
-  }, [placed, place]);
-
-  if (failed) {
-    return (
-      <p className="small muted">
-        The map could not load — that needs a signal too. Pick a spot you have fished before, or
-        try the phone again once you are back in coverage.
-      </p>
-    );
-  }
-
-  return (
-    <>
-      <div ref={nodeRef} className="map" style={{ height }} />
-      <p className="tiny muted">
-        Tap where you are. Drag the marker to nudge it. Close enough is close enough — weather and
-        river data do not change over a hundred metres.
-      </p>
-    </>
   );
 }
 

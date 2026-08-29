@@ -51,12 +51,15 @@ lib/astro.js            sun, moon, solunar — pure arithmetic, no network, no k
 lib/sources/openMeteo.js  weather + barometric trend + historical back-fill
 lib/sources/usgs.js       gauge height, discharge, water temp, flow percentile
 lib/sources/noaa.js       tide stage, Great Lakes water level
+lib/sources/geocode.js    "Racine, WI" to a lat/lon, for finding a gauge from home
 lib/conditions.js       assembles one snapshot from the above
 lib/model.js            entities, condition buckets, catch-rate maths
 lib/store.js            IndexedDB + the enrichment queue
 lib/app.js              the verbs the screens call, plus location resolution
 components/leaflet.js   shared CDN loader for Leaflet and OSM tiles
+components/PlaceOnMap.js  tap-to-place map, shared by the picker and the finder
 components/LocationPicker.js  what happens when the device will not give a fix
+components/StationFinder.js   four ways to find a gauge without standing in the river
 pages/api/*             thin proxies; exist only because browsers cannot call USGS/NOAA
 docs/security.md        threat model and the findings behind the shared-log posture
 ```
@@ -153,6 +156,17 @@ and the nearest gauge in a straight line is frequently on a different tributary
 or above the confluence that feeds the fished run. `pages/api/stations.js`
 returns ranked *candidates*; a person picks, and the choice is stored on the
 water. Don't replace this with an auto-pick.
+
+What can be made easier is *reaching* the list. `StationFinder` offers four
+routes to the point the search runs from, in the order people reach for them:
+a station already bound to another water (most anglers rebind the same few
+gauges), a typed town, a tap on the map, and only then the device's own fix —
+because waters get added at the kitchen table far more often than on the bank.
+
+`lib/sources/geocode.js` carries the reason town search needs its own parsing:
+no geocoding API accepts "Racine, WI", so the region is split off before the
+request and applied as a filter after it. Search for the literal string and you
+get nothing back.
 
 ## Constraints worth knowing
 
