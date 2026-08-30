@@ -3,9 +3,11 @@ import Link from 'next/link';
 import Chrome from '@components/Chrome';
 import Conditions from '@components/Conditions';
 import LocationPicker, { useLocationFallback } from '@components/LocationPicker';
+import Combobox from '@components/Combobox';
 import * as store from '@lib/store';
 import * as app from '@lib/app';
 import { tripHours } from '@lib/model';
+import { describeUse, rankWaters } from '@lib/suggest';
 
 const fmtDate = (iso) =>
   new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
@@ -21,6 +23,7 @@ export default function Today() {
   const [status, setStatus] = useState('');
   const [queued, setQueued] = useState(0);
   const [waterId, setWaterId] = useState('');
+  const [waterQuery, setWaterQuery] = useState('');
   const [tick, setTick] = useState(0);
   const { resolvePosition, pickerProps } = useLocationFallback();
 
@@ -122,19 +125,32 @@ export default function Today() {
         <div className="card">
           <span className="label">Start fishing</span>
           <div className="stack" style={{ marginTop: 10 }}>
-            <label className="field">
-              Water
-              <select value={waterId} onChange={(e) => setWaterId(e.target.value)}>
-                <option value="">Pick a water…</option>
-                {waters.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                    {w.station ? '' : ' (no gauge bound)'}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button className="primary wide" onClick={handleStart} disabled={!waters.length}>
+            <Combobox
+              label="Water"
+              value={waterQuery}
+              onChange={(text) => {
+                setWaterQuery(text);
+                // Typing over a chosen water un-chooses it, so the button can
+                // never start a trip on a water the field no longer names.
+                setWaterId('');
+              }}
+              onSelect={(option) => setWaterId(option.water.id)}
+              options={rankWaters({ waters, trips, query: waterQuery }).map((entry) => ({
+                id: entry.water.id,
+                value: entry.value,
+                range: entry.range,
+                water: entry.water,
+                detail: entry.count
+                  ? `${describeUse(entry)}${entry.water.station ? '' : ' · no gauge bound'}`
+                  : entry.water.station
+                    ? 'not fished yet'
+                    : 'not fished yet · no gauge bound',
+              }))}
+              placeholder={waters.length ? 'Start typing, or pick below' : 'No waters yet'}
+              autoCapitalize="words"
+              emptyMessage="No water by that name. Add it on the Waters screen first."
+            />
+            <button className="primary wide" onClick={handleStart} disabled={!waterId}>
               Start trip
             </button>
             {!waters.length ? (

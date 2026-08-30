@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PlaceOnMap from '@components/PlaceOnMap';
+import Combobox from '@components/Combobox';
 import * as app from '@lib/app';
 
 /**
@@ -153,50 +154,34 @@ export default function StationFinder({ water, waters, onBind, onCancel }) {
       ) : null}
 
       <div className="stack" style={{ marginTop: 16 }}>
-        <label className="field">
-          Search by town
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Racine, WI"
-            autoComplete="off"
-            autoCorrect="off"
-            spellCheck="false"
-            enterKeyHint="search"
-          />
-        </label>
-
-        {searching ? <p className="tiny muted">Searching…</p> : null}
-
-        {places.length ? (
-          <div className="list">
-            {places.map((place) => (
-              <button
-                type="button"
-                className="item"
-                key={place.id}
-                style={{ textAlign: 'left', minHeight: 0 }}
-                onClick={() => {
-                  setPlaces([]);
-                  setQuery(`${place.name}${place.admin1 ? `, ${place.admin1}` : ''}`);
-                  searchFrom({ lat: place.lat, lon: place.lon }, place.name);
-                }}
-              >
-                <div className="grow">
-                  <b>{place.label}</b>
-                  <span className="sub">{place.detail}</span>
-                </div>
-                <span className="muted">›</span>
-              </button>
-            ))}
-          </div>
-        ) : null}
-
-        {query.trim().length >= 2 && !searching && !places.length ? (
-          <p className="tiny muted">
-            No town by that name. Try adding the state — “Racine, WI” — or use the map.
-          </p>
-        ) : null}
+        <Combobox
+          label="Search by town"
+          value={query}
+          onChange={setQuery}
+          onSelect={(option) => {
+            const place = option.place;
+            setPlaces([]);
+            searchFrom({ lat: place.lat, lon: place.lon }, place.name);
+          }}
+          options={places.map((place) => ({
+            id: place.id,
+            // The field keeps the region, so it is obvious afterwards which
+            // of the four Racines the gauges below belong to.
+            value: `${place.name}${place.admin1 ? `, ${place.admin1}` : ''}`,
+            label: place.label,
+            detail: place.detail,
+            place,
+          }))}
+          loading={searching}
+          placeholder="Racine, WI"
+          autoCapitalize="words"
+          emptyMessage={
+            query.trim().length >= 2
+              ? 'No town by that name. Try adding the state — “Racine, WI” — or use the map.'
+              : null
+          }
+          hint="Gauges are ranked by distance from the town you pick."
+        />
 
         <div className="row">
           <button type="button" onClick={handleUseMyLocation} disabled={busy}>

@@ -54,8 +54,10 @@ lib/sources/noaa.js       tide stage, Great Lakes water level
 lib/sources/geocode.js    "Racine, WI" to a lat/lon, for finding a gauge from home
 lib/conditions.js       assembles one snapshot from the above
 lib/model.js            entities, condition buckets, catch-rate maths
+lib/suggest.js          ranking behind every dropdown — frequency, then recency
 lib/store.js            IndexedDB + the enrichment queue
 lib/app.js              the verbs the screens call, plus location resolution
+components/Combobox.js  the one dropdown; ARIA combobox, free text always allowed
 components/leaflet.js   shared CDN loader for Leaflet and OSM tiles
 components/PlaceOnMap.js  tap-to-place map, shared by the picker and the finder
 components/LocationPicker.js  what happens when the device will not give a fix
@@ -148,6 +150,33 @@ Charts must render `trips` (the sample size) beside every bar, and `confidence`
 must be shown. Never add a multi-variable breakdown: at 20–40 trips a year it
 yields single-digit cells and a confident-looking lie. `daysLikeToday` is the
 honest alternative and works from about a dozen trips.
+
+### Dropdowns suggest from your own log
+
+Species, method, fly, water — every one of these is something the angler has
+almost certainly entered before, so `components/Combobox.js` opens its list on
+focus, *before* a character is typed, ranked by `lib/suggest.js`: how often a
+value has been used, then how recently. That empty-state list is the whole
+point; it turns the common case from typing into one tap.
+
+Rules that hold it together, all covered by tests:
+
+- **Free text always wins.** A fish never caught before must not be harder to
+  log than a familiar one. Nothing is ever forced to match the list.
+- **Matching is by substring, not prefix** — people type the distinctive word
+  ("tail" for a pheasant tail nymph) — but a match at the start of a value or a
+  word outranks one buried mid-word, ahead of popularity.
+- **DOM focus never leaves the input.** The active row is tracked with
+  `aria-activedescendant`. Moving focus into the list dismisses the phone
+  keyboard, which makes the whole control unusable.
+- **An open list swallows Enter.** Otherwise dismissing suggestions submits the
+  form and logs a half-filled fish.
+- Values keep the spelling of their most recent use, so fixing the
+  capitalisation once fixes what the list offers from then on.
+
+Keep a native `<select>` for short fixed lists — water type, which spot — where
+the mobile picker is better than anything worth rebuilding. The combobox is for
+lists that grow with the log.
 
 ### Stations are bound by hand, once per water
 

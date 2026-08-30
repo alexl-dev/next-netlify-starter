@@ -5,9 +5,11 @@ import Chrome from '@components/Chrome';
 import Conditions from '@components/Conditions';
 import PinMap from '@components/PinMap';
 import LocationPicker, { useLocationFallback } from '@components/LocationPicker';
+import Combobox from '@components/Combobox';
 import * as store from '@lib/store';
 import * as app from '@lib/app';
 import { pinDurations, tripHours } from '@lib/model';
+import { collectHistory, describeUse, rankSuggestions } from '@lib/suggest';
 
 const time = (iso) =>
   new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -31,14 +33,19 @@ export default function TripScreen() {
   const [photoBlob, setPhotoBlob] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
   const [activePin, setActivePin] = useState('');
+  // Suggestions come from the whole log, not just this trip — the fly that
+  // worked last October is exactly the one worth offering again.
+  const [allCatches, setAllCatches] = useState([]);
   const fileRef = useRef(null);
   const { resolvePosition, pickerProps } = useLocationFallback();
 
   const refresh = useCallback(async () => {
     if (!id) return;
-    const [t, p, c] = await Promise.all([
+    const [t, p, c, everything] = await Promise.all([
       store.get('trips', id), store.byTrip('pins', id), store.byTrip('catches', id),
+      store.all('catches'),
     ]);
+    setAllCatches(everything || []);
     setTrip(t || null);
     const ordered = (p || []).sort((a, b) => Date.parse(a.droppedAt) - Date.parse(b.droppedAt));
     setPins(ordered);
@@ -159,6 +166,16 @@ export default function TripScreen() {
   const timed = pinDurations(trip, pins);
   const pinCount = pins.length;
 
+  const suggestFor = (field, typed) => {
+    const history = collectHistory(allCatches, field);
+    return rankSuggestions({ history, query: typed }).map((entry) => ({
+      id: entry.value,
+      value: entry.value,
+      range: entry.range,
+      detail: describeUse(entry),
+    }));
+  };
+
   return (
     <Chrome title={trip.waterName || 'Trip'}>
       <div className="card">
@@ -236,15 +253,17 @@ export default function TripScreen() {
             ) : null}
 
             <div className="grid2">
-              <label className="field">
-                Species
-                <input
-                  value={form.species}
-                  onChange={(e) => setForm({ ...form, species: e.target.value })}
-                  placeholder="Brown trout"
-                  autoComplete="off"
-                />
-              </label>
+              <Combobox
+                label="Species"
+                value={form.species}
+                onChange={(species) => setForm({ ...form, species })}
+                options={suggestFor('species', form.species)}
+                placeholder="Brown trout"
+                autoCapitalize="words"
+                emptyMessage={
+                  allCatches.length ? 'Nothing logged by that name yet — type it anyway.' : null
+                }
+              />
               <label className="field">
                 Length (in)
                 <input
@@ -258,24 +277,20 @@ export default function TripScreen() {
             </div>
 
             <div className="grid2">
-              <label className="field">
-                Method
-                <input
-                  value={form.method}
-                  onChange={(e) => setForm({ ...form, method: e.target.value })}
-                  placeholder="fly / spin"
-                  autoComplete="off"
-                />
-              </label>
-              <label className="field">
-                Fly or lure
-                <input
-                  value={form.gear}
-                  onChange={(e) => setForm({ ...form, gear: e.target.value })}
-                  placeholder="#16 pheasant tail"
-                  autoComplete="off"
-                />
-              </label>
+              <Combobox
+                label="Method"
+                value={form.method}
+                onChange={(method) => setForm({ ...form, method })}
+                options={suggestFor('method', form.method)}
+                placeholder="fly / spin"
+              />
+              <Combobox
+                label="Fly or lure"
+                value={form.gear}
+                onChange={(gear) => setForm({ ...form, gear })}
+                options={suggestFor('gear', form.gear)}
+                placeholder="#16 pheasant tail"
+              />
             </div>
 
             <label className="field">
